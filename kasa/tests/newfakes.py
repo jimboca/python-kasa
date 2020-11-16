@@ -1,7 +1,16 @@
 import logging
 import re
 
-from voluptuous import REMOVE_EXTRA, All, Any, Coerce, Invalid, Optional, Range, Schema
+from voluptuous import (  # type: ignore
+    REMOVE_EXTRA,
+    All,
+    Any,
+    Coerce,
+    Invalid,
+    Optional,
+    Range,
+    Schema,
+)
 
 from ..protocol import TPLinkSmartHomeProtocol
 
@@ -73,10 +82,10 @@ PLUG_SCHEMA = Schema(
         "hw_ver": str,
         "icon_hash": str,
         "led_off": check_int_bool,
-        "latitude": Any(All(float, Range(min=-90, max=90)), None),
-        "latitude_i": Any(All(float, Range(min=-90, max=90)), None),
-        "longitude": Any(All(float, Range(min=-180, max=180)), None),
-        "longitude_i": Any(All(float, Range(min=-180, max=180)), None),
+        "latitude": Any(All(float, Range(min=-90, max=90)), 0, None),
+        "latitude_i": Any(All(float, Range(min=-90, max=90)), 0, None),
+        "longitude": Any(All(float, Range(min=-180, max=180)), 0, None),
+        "longitude_i": Any(All(float, Range(min=-180, max=180)), 0, None),
         "mac": check_mac,
         "model": str,
         "oemId": str,
@@ -104,6 +113,27 @@ PLUG_SCHEMA = Schema(
     extra=REMOVE_EXTRA,
 )
 
+LIGHT_STATE_SCHEMA = Schema(
+    {
+        "brightness": All(int, Range(min=0, max=100)),
+        "color_temp": int,
+        "hue": All(int, Range(min=0, max=255)),
+        "mode": str,
+        "on_off": check_int_bool,
+        "saturation": All(int, Range(min=0, max=255)),
+        "dft_on_state": Optional(
+            {
+                "brightness": All(int, Range(min=0, max=100)),
+                "color_temp": All(int, Range(min=2000, max=9000)),
+                "hue": All(int, Range(min=0, max=255)),
+                "mode": str,
+                "saturation": All(int, Range(min=0, max=255)),
+            }
+        ),
+        "err_code": int,
+    }
+)
+
 BULB_SCHEMA = PLUG_SCHEMA.extend(
     {
         "ctrl_protocols": Optional(dict),
@@ -115,24 +145,7 @@ BULB_SCHEMA = PLUG_SCHEMA.extend(
         "is_dimmable": check_int_bool,
         "is_factory": bool,
         "is_variable_color_temp": check_int_bool,
-        "light_state": {
-            "brightness": All(int, Range(min=0, max=100)),
-            "color_temp": int,
-            "hue": All(int, Range(min=0, max=255)),
-            "mode": str,
-            "on_off": check_int_bool,
-            "saturation": All(int, Range(min=0, max=255)),
-            "dft_on_state": Optional(
-                {
-                    "brightness": All(int, Range(min=0, max=100)),
-                    "color_temp": All(int, Range(min=2700, max=9000)),
-                    "hue": All(int, Range(min=0, max=255)),
-                    "mode": str,
-                    "saturation": All(int, Range(min=0, max=255)),
-                }
-            ),
-            "err_code": int,
-        },
+        "light_state": LIGHT_STATE_SCHEMA,
         "preferred_state": [
             {
                 "brightness": All(int, Range(min=0, max=100)),
@@ -227,42 +240,41 @@ emeter_commands = {
 }
 
 
-def error(target, cmd="no-command", msg="default msg"):
-    return {target: {cmd: {"err_code": -1323, "msg": msg}}}
+def error(msg="default msg"):
+    return {"err_code": -1323, "msg": msg}
 
 
-def success(target, cmd, res):
+def success(res):
     if res:
         res.update({"err_code": 0})
     else:
         res = {"err_code": 0}
-    return {target: {cmd: res}}
+    return res
 
 
 class FakeTransportProtocol(TPLinkSmartHomeProtocol):
-    def __init__(self, info, invalid=False):
-        # TODO remove invalid when removing the old tests.
+    def __init__(self, info):
+        self.discovery_data = info
         proto = FakeTransportProtocol.baseproto
+
         for target in info:
             # print("target %s" % target)
             for cmd in info[target]:
                 # print("initializing tgt %s cmd %s" % (target, cmd))
                 proto[target][cmd] = info[target][cmd]
-        # if we have emeter support, check for it
+        # if we have emeter support, we need to add the missing pieces
         for module in ["emeter", "smartlife.iot.common.emeter"]:
-            if module not in info:
-                # TODO required for old tests
-                continue
-            if "get_realtime" in info[module]:
-                get_realtime_res = info[module]["get_realtime"]
-                # TODO remove when removing old tests
-                if callable(get_realtime_res):
-                    get_realtime_res = get_realtime_res()
-                if (
-                    "err_code" not in get_realtime_res
-                    or not get_realtime_res["err_code"]
-                ):
-                    proto[module] = emeter_commands[module]
+            for etype in ["get_realtime", "get_daystat", "get_monthstat"]:
+                if etype in info[module]:  # if the fixture has the data, use it
+                    # print("got %s %s from fixture: %s" % (module, etype, info[module][etype]))
+                    proto[module][etype] = info[module][etype]
+                else:  # otherwise fall back to the static one
+                    dummy_data = emeter_commands[module][etype]
+                    # print("got %s %s from dummy: %s" % (module, etype, dummy_data))
+                    proto[module][etype] = dummy_data
+
+            # print("initialized: %s" % proto[module])
+
         self.proto = proto
 
     def set_alias(self, x, child_ids=[]):
@@ -296,50 +308,55 @@ class FakeTransportProtocol(TPLinkSmartHomeProtocol):
 
     def set_mac(self, x, *args):
         _LOGGER.debug("Setting mac to %s", x)
-        self.proto["system"]["get_sysinfo"]["mac"] = x
+        self.proto["system"]["get_sysinfo"]["mac"] = x["mac"]
 
     def set_hs220_brightness(self, x, *args):
         _LOGGER.debug("Setting brightness to %s", x)
         self.proto["system"]["get_sysinfo"]["brightness"] = x["brightness"]
 
-    def transition_light_state(self, x, *args):
-        _LOGGER.debug("Setting light state to %s", x)
-        light_state = self.proto["smartlife.iot.smartbulb.lightingservice"][
-            "get_light_state"
-        ]
-        # The required change depends on the light state,
-        # exception being turning the bulb on and off
+    def set_hs220_dimmer_transition(self, x, *args):
+        _LOGGER.debug("Setting dimmer transition to %s", x)
+        brightness = x["brightness"]
+        if brightness == 0:
+            self.proto["system"]["get_sysinfo"]["relay_state"] = 0
+        else:
+            self.proto["system"]["get_sysinfo"]["relay_state"] = 1
+            self.proto["system"]["get_sysinfo"]["brightness"] = x["brightness"]
 
-        if "on_off" in x:
-            if x["on_off"] and not light_state["on_off"]:  # turning on
+    def transition_light_state(self, state_changes, *args):
+        _LOGGER.debug("Setting light state to %s", state_changes)
+        light_state = self.proto["system"]["get_sysinfo"]["light_state"]
+
+        _LOGGER.debug("Current light state: %s", light_state)
+        new_state = light_state
+
+        if state_changes["on_off"] == 1:  # turn on requested
+            if not light_state[
+                "on_off"
+            ]:  # if we were off, use the dft_on_state as a base
+                _LOGGER.debug("Bulb was off, using dft_on_state")
                 new_state = light_state["dft_on_state"]
-                new_state["on_off"] = 1
-                self.proto["smartlife.iot.smartbulb.lightingservice"][
-                    "get_light_state"
-                ] = new_state
-            elif not x["on_off"] and light_state["on_off"]:
-                new_state = {"dft_on_state": light_state, "on_off": 0}
 
-                self.proto["smartlife.iot.smartbulb.lightingservice"][
-                    "get_light_state"
-                ] = new_state
+        # override the existing settings
+        new_state.update(state_changes)
 
-            return
+        if (
+            not state_changes["on_off"] and "dft_on_state" not in light_state
+        ):  # if not already off, pack the data inside dft_on_state
+            _LOGGER.debug(
+                "Bulb was on and turn_off was requested, saving to dft_on_state"
+            )
+            new_state = {"dft_on_state": light_state, "on_off": 0}
 
-        if not light_state["on_off"] and "on_off" not in x:
-            light_state = light_state["dft_on_state"]
-
-        _LOGGER.debug("Current state: %s", light_state)
-        for key in x:
-            light_state[key] = x[key]
+        _LOGGER.debug("New light state: %s", new_state)
+        self.proto["system"]["get_sysinfo"]["light_state"] = new_state
 
     def light_state(self, x, *args):
-        light_state = self.proto["smartlife.iot.smartbulb.lightingservice"][
-            "get_light_state"
-        ]
+        light_state = self.proto["system"]["get_sysinfo"]["light_state"]
         # Our tests have light state off, so we simply return the dft_on_state when device is on.
-        _LOGGER.info("reporting light state: %s", light_state)
-        if light_state["on_off"]:
+        _LOGGER.debug("reporting light state: %s", light_state)
+        # TODO: hack to go around KL430 fixture differences
+        if light_state["on_off"] and "dft_on_state" in light_state:
             return light_state["dft_on_state"]
         else:
             return light_state
@@ -369,6 +386,11 @@ class FakeTransportProtocol(TPLinkSmartHomeProtocol):
             "get_light_state": light_state,
             "transition_light_state": transition_light_state,
         },
+        # lightstrip follows the same payloads but uses different module & method
+        "smartlife.iot.lightStrip": {
+            "set_light_state": transition_light_state,
+            "get_light_state": light_state,
+        },
         "time": {
             "get_time": {
                 "year": 2017,
@@ -387,7 +409,10 @@ class FakeTransportProtocol(TPLinkSmartHomeProtocol):
             "set_timezone": None,
         },
         # HS220 brightness, different setter and getter
-        "smartlife.iot.dimmer": {"set_brightness": set_hs220_brightness},
+        "smartlife.iot.dimmer": {
+            "set_brightness": set_hs220_brightness,
+            "set_dimmer_transition": set_hs220_dimmer_transition,
+        },
     }
 
     async def query(self, host, request, port=9999):
@@ -400,26 +425,39 @@ class FakeTransportProtocol(TPLinkSmartHomeProtocol):
         except KeyError:
             child_ids = []
 
-        target = next(iter(request))
-        if target not in proto.keys():
-            return error(target, msg="target not found")
+        def get_response_for_module(target):
 
-        cmd = next(iter(request[target]))
-        if cmd not in proto[target].keys():
-            return error(target, cmd, msg="command not found")
+            if target not in proto.keys():
+                return error(msg="target not found")
 
-        params = request[target][cmd]
-        _LOGGER.debug(f"Going to execute {target}.{cmd} (params: {params}).. ")
+            def get_response_for_command(cmd):
+                if cmd not in proto[target].keys():
+                    return error(msg=f"command {cmd} not found")
 
-        if callable(proto[target][cmd]):
-            res = proto[target][cmd](self, params, child_ids)
-            _LOGGER.debug("[callable] %s.%s: %s", target, cmd, res)
-            # verify that change didn't break schema, requires refactoring..
-            # TestSmartPlug.sysinfo_schema(self.proto["system"]["get_sysinfo"])
-            return success(target, cmd, res)
-        elif isinstance(proto[target][cmd], dict):
-            res = proto[target][cmd]
-            _LOGGER.debug("[static] %s.%s: %s", target, cmd, res)
-            return success(target, cmd, res)
-        else:
-            raise NotImplementedError(f"target {target} cmd {cmd}")
+                params = request[target][cmd]
+                _LOGGER.debug(f"Going to execute {target}.{cmd} (params: {params}).. ")
+
+                if callable(proto[target][cmd]):
+                    res = proto[target][cmd](self, params, child_ids)
+                    _LOGGER.debug("[callable] %s.%s: %s", target, cmd, res)
+                    return success(res)
+                elif isinstance(proto[target][cmd], dict):
+                    res = proto[target][cmd]
+                    _LOGGER.debug("[static] %s.%s: %s", target, cmd, res)
+                    return success(res)
+                else:
+                    raise NotImplementedError(f"target {target} cmd {cmd}")
+
+            from collections import defaultdict
+
+            cmd_responses = defaultdict(dict)
+            for cmd in request[target]:
+                cmd_responses[target][cmd] = get_response_for_command(cmd)
+
+            return cmd_responses
+
+        response = {}
+        for target in request:
+            response.update(get_response_for_module(target))
+
+        return response

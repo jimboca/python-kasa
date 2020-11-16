@@ -1,4 +1,0 @@
-click
-click-datetime
-pre-commit
-voluptuous

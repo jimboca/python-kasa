@@ -1,53 +1,30 @@
 # python-kasa
 
 [![PyPI version](https://badge.fury.io/py/python-kasa.svg)](https://badge.fury.io/py/python-kasa)
-[![Build Status](https://dev.azure.com/python-tplink-kasa/python-kasa/_apis/build/status/python-tplink-kasa.python-kasa?branchName=master)](https://dev.azure.com/python-tplink-kasa/python-kasa/_build/latest?definitionId=2&branchName=master)
+[![Build Status](https://dev.azure.com/python-kasa/python-kasa/_apis/build/status/python-kasa.python-kasa?branchName=master)](https://dev.azure.com/python-kasa/python-kasa/_build/latest?definitionId=2&branchName=master)
 [![Coverage Status](https://coveralls.io/repos/github/python-kasa/python-kasa/badge.svg?branch=master)](https://coveralls.io/github/python-kasa/python-kasa?branch=master)
-[![Reviewed by Hound](https://img.shields.io/badge/Reviewed_by-Hound-8E64B0.svg)](https://houndci.com)
+[![Documentation Status](https://readthedocs.org/projects/python-kasa/badge/?version=latest)](https://python-kasa.readthedocs.io/en/latest/?badge=latest)
 
-Python Library to control TPLink smart plugs/switches and smart bulbs.
+python-kasa is a Python library to control TPLink smart home devices (plugs, wall switches, power strips, and bulbs) using asyncio.
+This project is a maintainer-made fork of [pyHS100](https://github.com/GadgetReactor/pyHS100) project.
 
-**Supported devices**
+## Getting started
 
-* Plugs
-  * HS100
-  * HS103
-  * HS105
-  * HS110
-* Power Strips
-  * HS300
-* Wall switches
-  * HS200
-  * HS210
-  * HS220
-* Bulbs
-  * LB100
-  * LB110
-  * LB120
-  * LB130
-  * LB230
-  * KL110
-  * KL120
-  * KL130
+You can install the most recent release using pip. Until
+```
+pip install python-kasa --pre
+```
 
-# Usage
-
-The package is shipped with a console tool named kasa, please refer to ```kasa --help``` for detailed usage.
-The device to which the commands are sent is chosen by `KASA_HOST` environment variable or passing `--host <address>` as an option.
-To see what is being sent to and received from the device, specify option `--debug`.
-
-To avoid discovering the devices when executing commands its type can be passed by specifying either `--plug` or `--bulb`,
-if no type is given its type will be discovered automatically with a small delay.
-Some commands (such as reading energy meter values and setting color of bulbs) additional parameters are required,
-which you can find by adding `--help` after the command, e.g. `kasa emeter --help` or `kasa hsv --help`.
-
-If no command is given, the `state` command will be executed to query the device state.
-
+Alternatively, you can clone this repository and use poetry to install the development version:
+```
+git clone https://github.com/python-kasa/python-kasa.git
+cd python-kasa/
+poetry install
+```
 
 ## Discovering devices
 
-The devices can be discovered either by using `kasa discover` or by calling `kasa` without any parameters.
-In both cases supported devices are discovered from the same broadcast domain, and their current state will be queried and printed out.
+After installation, the devices can be discovered either by using `kasa discover` or by calling `kasa` without any parameters.
 
 ```
 $ kasa
@@ -68,13 +45,15 @@ Location:     {'latitude': XXXX, 'longitude': XXXX}
 Current state: {'total': 133.082, 'power': 100.418681, 'current': 0.510967, 'voltage': 225.600477}
 ```
 
+Use `kasa --help` to get list of all available commands, or alternatively, [consult the documentation](https://python-kasa.readthedocs.io/en/latest/cli.html).
+
 ## Basic controls
 
 All devices support a variety of common commands, including:
  * `state` which returns state information
  * `on` and `off` for turning the device on or off
  * `emeter` (where applicable) to return energy consumption information
- * `sysinfo` to return raw system information which is used by e.g. `state`, useful for debugging and when adding support for new device types
+ * `sysinfo` to return raw system information
 
 ## Energy meter
 
@@ -88,148 +67,81 @@ $ kasa emeter
 Current state: {'total': 133.105, 'power': 108.223577, 'current': 0.54463, 'voltage': 225.296283}
 ```
 
-## Plug-specific commands
-
-At the moment only switching the state of the LED is implemented.
-**Feel free to submit patches as pull requests for further features!**
-### Controlling the LED
-
-`led` command can be used to control whether the LED light on front of the plug is on or off.
-
-```
-$ kasa --plug led
-LED state: False
-$ kasa --plug led 1
-Turning led to True
-```
-
 ## Bulb-specific commands
 
-At the moment setting brightness, color temperature and color (in HSV) is supported.
+At the moment setting brightness, color temperature and color (in HSV) are supported depending on the device.
 The commands are straightforward, so feel free to check `--help` for instructions how to use them.
-
-**Feel free to submit patches as pull requests to add more functionality (e.g. scenes)!**
 
 # Library usage
 
-The public API is well documented, but here are some examples to get you started.
-For all available API functions run ```help(SmartPlug)``` or ```help(SmartBulb)```.
+You can find several code examples in [the API documentation](https://python-kasa.readthedocs.io).
 
-## Discovering devices
+## Contributing
 
-`Discover` class' `discover()` can be used to discover supported devices,
-which returns a dictionary keyed with the IP address whose value hold a ready-to-use instance of the detected device type.
+Contributions are very welcome! To simplify the process, we are leveraging automated checks and tests for contributions.
 
-Example:
-```python
-from kasa import Discover
+### Setting up development environment
 
-for dev in Discover.discover().values():
-    print(dev)
-```
-```
-$ python3 example.py
-<SmartPlug at 192.168.XXX.XXX (My Smart Plug), is_on: True - dev specific: {'LED state': True, 'On since': datetime.datetime(2017, 3, 26, 18, 29, 17, 52073)}>
-```
+To get started, simply clone this repository and initialize the development environment.
+We are using [poetry](https://python-poetry.org) for dependency management, so after cloning the repository simply execute
+`poetry install` which will install all necessary packages and create a virtual environment for you.
 
-## Querying basic information
+### Code-style checks
 
-*Please note that most property getters do I/O (e.g. fetching the system information) on each call.
-If you want to avoid unnecessary communication with the device please use `get_sysinfo` and handle parsing of information by yourself.*
+We use several tools to automatically check all contributions. The simplest way to verify that everything is formatted properly
+before creating a pull request, consider activating the pre-commit hooks by executing `pre-commit install`.
+This will make sure that the checks are passing when you do a commit.
 
-```python
-from kasa import SmartPlug, SmartBulb
-from pprint import pformat as pf
+You can also execute the checks by running either `tox -e lint` to only do the linting checks, or `tox` to also execute the tests.
 
-plug = SmartPlug("192.168.XXX.XXX")
-print("Hardware: %s" % pf(plug.hw_info))
-print("Full sysinfo: %s" % pf(plug.get_sysinfo())) # this prints lots of information about the device
-```
+### Analyzing network captures
 
-## State & switching
+The simplest way to add support for a new device or to improve existing ones is to capture traffic between the mobile app and the device.
+After capturing the traffic, you can either use the [softScheck's  wireshark dissector](https://github.com/softScheck/tplink-smartplug#wireshark-dissector)
+or the `parse_pcap.py` script contained inside the `devtools` directory.
 
-Devices can be turned on and off by either calling appropriate methods on the device object,
-or by assigning a new state to `state` property.
 
-```python
-print("Current state: %s" % plug.state)
-plug.turn_off()
-plug.turn_on()
-```
+## Supported devices
 
-```python
-plug.state = "ON"
-plug.state = "OFF"
-```
+### Plugs
 
-## Time information
-```python
-print("Current time: %s" % plug.time)
-print("Timezone: %s" % plug.timezone)
-```
+* HS100
+* HS103
+* HS105
+* HS107
+* HS110
 
-## Getting and setting the name
-```python
-print("Alias: %s" % plug.alias)
-plug.alias = "My New Smartplug"
-```
+### Power Strips
 
-## Getting emeter status (if applicable)
-```python
-print("Current consumption: %s" % plug.get_emeter_realtime())
-print("Per day: %s" % plug.get_emeter_daily(year=2016, month=12))
-print("Per month: %s" % plug.get_emeter_monthly(year=2016))
-```
+* HS300
+* KP303
 
-## Plug-specific
+### Wall switches
 
-### Switching the led (plugs only)
-```python
-print("Current LED state: %s" % plug.led)
-plug.led = False # turn off led
-print("New LED state: %s" % plug.led)
-```
+* HS200
+* HS210
+* HS220
 
-## Bulb-specific API
+### Bulbs
 
-The bulb API is likewise straightforward, so please refer to its API documentation.
-Information about supported features can be queried by using properties prefixed with `is_`, e.g. `is_dimmable`.
+* LB100
+* LB110
+* LB120
+* LB130
+* LB230
+* KL60
+* KL110
+* KL120
+* KL130
 
-### Setting the brightness
+### Light strips
 
-The `brightness` property works in percentages.
+* KL430
 
-```python
-print(bulb.brightness)
-if bulb.is_dimmable:
-    bulb.brightness = 100
-```
+**Contributions (be it adding missing features, fixing bugs or improving documentation) are more than welcome, feel free to submit pull requests!**
 
-### Setting the color temperature
-```python
-print(bulb.color_temp)
-if bulb.is_variable_color_temp:
-    bulb.color_temp = 3000
-```
+### Resources
 
-### Setting the color
-
-Hue is given in degrees (0-360) and saturation and value in percentage.
-
-```python
-print(bulb.hsv)
-if bulb.is_color:
-   bulb.hsv = (180, 100, 100) # set to cyan
-```
-
-## Development Setup
-
-### Docker
-
-The following assumes you have a working installation of Docker.
-
-Set up the environment and run the tests on demand.
-
-```shell
-docker build . -t kasa && docker run -v $(PWD)/kasa/tests:/opt/python-kasa/kasa/tests kasa pytest
-```
+* [softScheck's github contains lot of information and wireshark dissector](https://github.com/softScheck/tplink-smartplug#wireshark-dissector)
+* [https://github.com/plasticrake/tplink-smarthome-simulator](tplink-smarthome-simulator)
+* [Unofficial API documentation](https://github.com/plasticrake/tplink-smarthome-api/blob/master/API.md)
