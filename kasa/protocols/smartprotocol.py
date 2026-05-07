@@ -379,15 +379,23 @@ class SmartProtocol(BaseProtocol):
         ):
             return
 
-        response_list_name = next(
-            iter(
-                [
-                    key
-                    for key in response_result
-                    if isinstance(response_result[key], list)
-                ]
+        list_keys = [
+            key for key in response_result if isinstance(response_result[key], list)
+        ]
+        if not list_keys:
+            # Some hubs (e.g. Tapo H500) can return start_index/sum without any
+            # list-typed fields; avoid StopIteration -> RuntimeError in async code.
+            _LOGGER.warning(
+                "Device %s: method %s reports sum=%s but no list fields in result "
+                "(keys: %s); skipping additional list pages",
+                self._host,
+                method,
+                list_sum,
+                list(response_result.keys()),
             )
-        )
+            return
+
+        response_list_name = list_keys[0]
         while (list_length := len(response_result[response_list_name])) < list_sum:
             request = self._get_list_request(method, params, list_length)
             response = await self._execute_query(

@@ -109,15 +109,34 @@ class SmartDevice(Device):
         can't be created to avoid spamming the logs on every update.
         """
         changed = False
+        child_component_list = child_device_components_resp.get("child_component_list")
+        if not isinstance(child_component_list, list):
+            _LOGGER.warning(
+                "Missing child_component_list for hub %s (component keys: %s)",
+                self.host,
+                list(child_device_components_resp.keys()),
+            )
+            child_component_list = []
+
+        child_device_list = child_device_resp.get("child_device_list")
+        if not isinstance(child_device_list, list):
+            _LOGGER.warning(
+                "Missing child_device_list for hub %s (device keys: %s)",
+                self.host,
+                list(child_device_resp.keys()),
+            )
+            child_device_list = []
+
         smart_children_components = {
             child["device_id"]: child
-            for child in child_device_components_resp["child_component_list"]
+            for child in child_component_list
+            if isinstance(child, dict) and "device_id" in child
         }
         children = self._children
         child_ids: set[str] = set()
         existing_child_ids = set(self._children.keys())
 
-        for info in child_device_resp["child_device_list"]:
+        for info in child_device_list:
             if (child_id := info.get("device_id")) and (
                 child_components := smart_children_components.get(child_id)
             ):

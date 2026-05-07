@@ -414,6 +414,23 @@ async def test_smartcam_protocol_list_request(mocker, list_sum, batch_size):
     assert resp == response
 
 
+async def test_handle_response_lists_no_list_fields(dummy_protocol, caplog):
+    """Paginated shape without list keys must not raise (e.g. Tapo H500 hub).
+
+    Regression for https://github.com/python-kasa/python-kasa/discussions/1593
+    """
+    caplog.set_level(logging.WARNING)
+    result = {
+        "start_index": 0,
+        "sum": 1,
+        "child_device_list": {},
+    }
+    await dummy_protocol._handle_response_lists(
+        result, "getChildDeviceList", None, retry_count=0
+    )
+    assert "no list fields" in caplog.text
+
+
 async def test_incomplete_list(mocker, caplog):
     """Test for handling incomplete lists returned from queries."""
     info = {
