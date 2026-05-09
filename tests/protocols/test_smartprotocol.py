@@ -13,6 +13,7 @@ from kasa.exceptions import (
 from kasa.protocols.smartcamprotocol import SmartCamProtocol
 from kasa.protocols.smartprotocol import SmartProtocol, _ChildProtocolWrapper
 from kasa.smart import SmartDevice
+from kasa.smartcam.smartcamdevice import SmartCamDevice
 
 from ..conftest import device_smart
 from ..fakeprotocol_smart import FakeSmartTransport
@@ -429,6 +430,43 @@ async def test_handle_response_lists_no_list_fields(dummy_protocol, caplog):
         result, "getChildDeviceList", None, retry_count=0
     )
     assert "no list fields" in caplog.text
+
+
+async def test_create_delete_children_missing_lists(dummy_protocol, caplog):
+    """Child payloads missing list fields should be treated as empty lists."""
+    dev = object.__new__(SmartDevice)
+    dev.protocol = dummy_protocol
+    dev._children = {}
+    dev._logged_missing_child_ids = set()
+
+    caplog.set_level(logging.WARNING)
+    changed = await dev._create_delete_children(
+        {"start_index": 0, "sum": 0},
+        {"start_index": 0, "sum": 0},
+    )
+
+    assert changed is False
+    assert "Missing child_component_list" in caplog.text
+    assert "Missing child_device_list" in caplog.text
+
+
+async def test_smartcam_update_children_missing_child_list(dummy_protocol, caplog):
+    """SmartCam child updates should tolerate missing child_device_list."""
+    dev = object.__new__(SmartCamDevice)
+    dev.protocol = dummy_protocol
+    dev._children = {}
+    dev._logged_missing_child_ids = set()
+    dev._last_update = {
+        "getChildDeviceList": {"start_index": 0, "sum": 0},
+        "getChildDeviceComponentList": {"start_index": 0, "sum": 0},
+    }
+
+    caplog.set_level(logging.WARNING)
+    changed = await dev._update_children_info()
+
+    assert changed is False
+    assert "Missing child_component_list" in caplog.text
+    assert "Missing child_device_list" in caplog.text
 
 
 async def test_incomplete_list(mocker, caplog):
