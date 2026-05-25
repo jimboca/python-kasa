@@ -506,13 +506,27 @@ class Device(ABC):
         """
 
     def __repr__(self) -> str:
-        update_needed = " - update() needed" if not self._last_update else ""
-        if not self._last_update and not self._discovery_info:
-            return f"<{self.device_type} at {self.host}{update_needed}>"
-        return (
-            f"<{self.device_type} at {self.host} -"
-            f" {self.alias} ({self.model}){update_needed}>"
-        )
+        # __repr__ must never raise. Logging code that drops a device into
+        # an f-string (e.g. `f"... dev={self.dev}"`) can otherwise tear
+        # down whichever thread is doing the logging when the cached
+        # update payload happens to contain a SmartErrorCode for one of
+        # the methods (Tapo C-series cameras / H500 hubs do this on
+        # transient failures). Be exception-safe and degrade to a
+        # host-only repr in that case.
+        try:
+            update_needed = " - update() needed" if not self._last_update else ""
+            if not self._last_update and not self._discovery_info:
+                return f"<{self.device_type} at {self.host}{update_needed}>"
+            return (
+                f"<{self.device_type} at {self.host} -"
+                f" {self.alias} ({self.model}){update_needed}>"
+            )
+        except Exception as ex:  # noqa: BLE001
+            try:
+                dt_str = str(self.device_type)
+            except Exception:  # noqa: BLE001
+                dt_str = "Device"
+            return f"<{dt_str} at {self.host} - repr unavailable: {type(ex).__name__}>"
 
     _deprecated_device_type_attributes = {
         # is_type

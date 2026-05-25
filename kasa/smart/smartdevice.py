@@ -913,14 +913,43 @@ class SmartDevice(Device):
         info: dict[str, Any], discovery_info: dict[str, Any] | None
     ) -> DeviceInfo:
         """Get model information for a device."""
-        di = info["get_device_info"]
-        components = [comp["id"] for comp in info["component_nego"]["component_list"]]
+        # Some devices (notably Tapo C-series cameras and H500 hubs) can
+        # return SmartErrorCode for individual sub-methods inside an
+        # otherwise-successful multi-method query. The cached _last_update
+        # then contains, e.g. info["get_device_info"] = SmartErrorCode.<X>
+        # instead of a dict, and any f-string containing the device (e.g.
+        # `f"{dev}"` -> __repr__ -> self.model -> device_info) blows up
+        # with `TypeError: 'SmartErrorCode' object is not subscriptable`.
+        # Treat such error sentinels (and outright missing keys) as a
+        # transient device error so the caller can decide what to do.
+        di = info.get("get_device_info") if isinstance(info, dict) else None
+        if not isinstance(di, dict):
+            raise DeviceError(
+                f"get_device_info missing or returned an error sentinel "
+                f"({type(di).__name__}={di!r}); cannot build DeviceInfo",
+                error_code=di if isinstance(di, SmartErrorCode) else None,
+            )
+        component_nego = info.get("component_nego") if isinstance(info, dict) else None
+        if not isinstance(component_nego, dict) or not isinstance(
+            component_nego.get("component_list"), list
+        ):
+            raise DeviceError(
+                f"component_nego missing or returned an error sentinel "
+                f"({type(component_nego).__name__}); cannot build DeviceInfo",
+                error_code=component_nego
+                if isinstance(component_nego, SmartErrorCode)
+                else None,
+            )
+        components = [comp["id"] for comp in component_nego["component_list"]]
 
-        # Get model/region info
-        short_name = di["model"]
+        # Get model/region info. Use .get() with safe fallbacks so a
+        # partially-populated payload (e.g. firmware that omits one of
+        # these fields) degrades to a usable DeviceInfo instead of
+        # raising KeyError out of __repr__.
+        short_name = di.get("model") or "unknown"
         region = None
         if discovery_info:
-            device_model = discovery_info["device_model"]
+            device_model = discovery_info.get("device_model") or short_name
             long_name, _, region = device_model.partition("(")
             if region:  # P100 doesn't have region
                 region = region.replace(")", "")
@@ -930,18 +959,21 @@ class SmartDevice(Device):
             region = di.get("specs")
 
         # Get other info
-        device_family = di["type"]
+        device_family = di.get("type") or "SMART.UNKNOWN"
         device_type = SmartDevice._get_device_type_from_components(
             components, device_family
         )
-        fw_version_full = di["fw_ver"]
+        fw_version_full = di.get("fw_ver") or ""
         if " " in fw_version_full:
             firmware_version, firmware_build = fw_version_full.split(" ", maxsplit=1)
         else:
             firmware_version, firmware_build = fw_version_full, None
-        _protocol, devicetype = device_family.split(".")
+        if "." in device_family:
+            _protocol, devicetype = device_family.split(".", 1)
+        else:
+            devicetype = device_family
         # Brand inferred from SMART.KASAPLUG/SMART.TAPOPLUG etc.
-        brand = devicetype[:4].lower()
+        brand = devicetype[:4].lower() if devicetype else "unknown"
 
         return DeviceInfo(
             short_name=short_name,
@@ -949,7 +981,7 @@ class SmartDevice(Device):
             brand=brand,
             device_family=device_family,
             device_type=device_type,
-            hardware_version=di["hw_ver"],
+            hardware_version=di.get("hw_ver") or "",
             firmware_version=firmware_version,
             firmware_build=firmware_build,
             requires_auth=True,
